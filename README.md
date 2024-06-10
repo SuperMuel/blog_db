@@ -1,5 +1,43 @@
 # [BlogDB](https://github.com/SuperMuel/blog_db)
 
+## Introduction
+
+## Installation
+
+### Prerequisites
+
+1. **Python 3.12**: Install Python from [here](https://www.python.org/downloads/).
+2. **Poetry**: Install Poetry from [here](https://python-poetry.org/docs/).
+3. **A MongoDB database**: You can create a free MongoDB database at [MongoDB Atlas](https://www.mongodb.com/cloud/atlas).
+
+### Local Development
+
+1. **Clone the repository**:
+
+```sh
+git clone https://github.com/SuperMuel/blog_db
+```
+
+2. **Install dependencies**:
+
+```sh
+poetry install
+```
+
+3. **Create a `.env` file**:
+
+Copy the contents of the `.env.example` file to a new file called `.env` and fill it accordingly.
+
+4. **Serve the API**:
+
+```sh
+poetry run fastapi dev main.py
+```
+
+The API will be available at `http://localhost:8000`.
+
+You can check the documentation at `http://localhost:8000/docs`.
+
 ## Deploy to Heroku
 
 ### Prerequisites
@@ -21,7 +59,7 @@ heroku login
 heroku create your-app-name
 ```
 
-3. **Add your MongoDB URL to an Heroku config var**:
+3. **Add your MongoDB URI to an Heroku config var**:
 
 ```sh
 heroku config:set MONGODB_URI=your-mongodb-uri

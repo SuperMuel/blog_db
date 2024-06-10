@@ -17,7 +17,7 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    client = AsyncIOMotorClient(os.environ["MONGODB_URL"])
+    client = AsyncIOMotorClient(os.environ["MONGODB_URI"])
 
     await init_beanie(database=client["blogdb"], document_models=[Article, User])
 
