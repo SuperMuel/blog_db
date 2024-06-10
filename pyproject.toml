@@ -1,9 +1,12 @@
 [tool.poetry]
 name = "blog-db"
 version = "0.1.0"
-description = ""
+description = "This is a simple API that generates, stores and serves Blog articles summaries."
 authors = ["SuperMuel <69467005+SuperMuel@users.noreply.github.com>"]
 readme = "README.md"
+
+[project.urls]
+Homepage = "https://github.com/SuperMuel/blog_db"
 
 [tool.poetry.dependencies]
 python = "==3.12.1"
