@@ -38,6 +38,11 @@ app = FastAPI(
 )
 
 
+@app.get("/")
+async def root():
+    return {"message": "Welcome to BlogDB"}
+
+
 # TODO : TLS
 async def get_authenticated_user(api_key: str = Security(api_key_header)) -> User:
     user = await User.find_one({"api_key": api_key})

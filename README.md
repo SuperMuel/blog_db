@@ -1,4 +1,4 @@
-# BlogDB
+# [BlogDB](https://github.com/SuperMuel/blog_db)
 
 ## Deploy to Heroku
 
