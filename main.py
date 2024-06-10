@@ -60,8 +60,9 @@ async def get_authenticated_user(api_key: str = Security(api_key_header)) -> Use
     "/articles/",
     response_model=list[Article],
     tags=["articles"],
+    operation_id="get_articles",
 )
-async def read_articles(
+async def get_articles(
     request: Request,
     user: str = Security(get_authenticated_user),
 ):
@@ -72,6 +73,7 @@ async def read_articles(
     "/articles/{article_id}",
     response_model=Article,
     tags=["articles"],
+    operation_id="get_article",
 )
 async def read_article(article_id: PydanticObjectId):
     article = await Article.get(article_id)
