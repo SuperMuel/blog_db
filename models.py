@@ -1,21 +1,12 @@
-from pydantic import (
-    BaseModel,
-    Field,
-    EmailStr,
-    BeforeValidator,
-    ConfigDict,
-    UrlConstraints,
-)
-
 from typing import Annotated
 
+from beanie import Document
+from pydantic import (
+    Field,
+    UrlConstraints,
+)
 from pydantic_core import Url
-
-
-# Represents an ObjectId field in the database.
-# It will be represented as a `str` on the model so that it can be serialized to JSON.
-PyObjectId = Annotated[str, BeforeValidator(str)]
-
+from pymongo import IndexModel
 
 HttpUrl = Annotated[
     Url,
@@ -23,8 +14,30 @@ HttpUrl = Annotated[
 ]
 
 
-class ArticleModel(BaseModel):
-    id: PyObjectId | None = Field(alias="_id", default=None)
+class User(Document):
+    username: str = Field(
+        ...,
+        max_length=30,
+        examples=["SuperMuel"],
+    )
+    api_key: str = Field(
+        ...,
+        max_length=100,
+        min_length=5,
+        examples=["secret"],
+        repr=False,
+        exclude=True,
+    )
+
+    class Settings:
+        name = "users"
+        indexes = [
+            IndexModel("username", unique=True),
+            IndexModel("api_key"),
+        ]
+
+
+class Article(Document):
     title: str = Field(
         ...,
         max_length=300,
@@ -35,7 +48,8 @@ class ArticleModel(BaseModel):
         examples=["https://supermuel.fr/why-use-git-when-you-can-email-zip-files"],
     )
 
-    model_config = ConfigDict(
-        populate_by_name=True,
-        arbitrary_types_allowed=True,
-    )
+    class Settings:
+        name = "articles"
+        indexes = [
+            IndexModel("url", unique=True),
+        ]
