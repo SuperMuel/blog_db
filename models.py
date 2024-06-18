@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Annotated
 
 from beanie import Document
@@ -65,8 +66,32 @@ class Article(Document):
         ]
 
 
+class RSSFeedAnalysisStatus(str, Enum):
+    """
+    Enumeration representing the analysis status of an RSS feed.
+
+    The status can be one of the following:
+    - 'pending': The RSS feed has been added and is waiting to be analyzed.
+    - 'in_progress': The analysis of the RSS feed is currently ongoing.
+    - 'done': The analysis of the RSS feed has been completed successfully.
+    - 'failed': The analysis of the RSS feed has failed.
+
+    This status is used to manage the analysis process and prevent multiple concurrent analyses of the same RSS feed.
+    """
+
+    pending = "pending"
+    in_progress = "in_progress"
+    done = "done"
+    failed = "failed"
+
+
 class RSSFeed(Document):
     url: HttpUrl = Field(..., examples=["https://tim-tek.com/feed"])
+
+    analysis_status: RSSFeedAnalysisStatus = Field(
+        RSSFeedAnalysisStatus.pending,
+        examples=["pending"],
+    )
 
     class Settings:
         name = "rss_feeds"

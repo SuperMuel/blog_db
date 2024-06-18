@@ -12,7 +12,7 @@ from fastapi.security import APIKeyHeader
 from fastapi_utilities import repeat_every
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from models import Article, RSSFeed, User
+from models import Article, RSSFeed, RSSFeedAnalysisStatus, User
 
 api_key_header = APIKeyHeader(name="X-API-Key")
 
@@ -127,33 +127,48 @@ async def add_rss_feed(
     return rss_feed
 
 
-def summarize(url: str) -> str:
-    # TODO
-    return "Résumé de l'article généré par IA"
+async def summarize(url: str) -> str:
+    return ""
 
 
 async def process_rss_feed(rss_feed: RSSFeed):
+    if rss_feed.analysis_status == RSSFeedAnalysisStatus.in_progress:
+        logger.info(f"RSS feed {rss_feed.url} is already being processed")
+        return
+
+    rss_feed.analysis_status = RSSFeedAnalysisStatus.in_progress
+    await rss_feed.replace()
+
     logger.info(f"Processing RSS feed: {rss_feed.url}")
 
-    # TODO : set rss_feed analysis status to "processing"
+    try:
+        rss_url = rss_feed.url
+        parsed_feed = feedparser.parse(str(rss_url))
+        logger.info(f"Found {len(parsed_feed.entries)} entries in feed {rss_feed.url}")
+        for entry in parsed_feed.entries:
+            logger.info(f"Processing entry: {entry.title}")
+            if not await Article.find_one({"url": entry.link}):
+                logger.info(f"New article detected: {entry.title}")
+                summary = await summarize(entry.link)
+                article = Article(title=entry.title, url=entry.link, summary=summary)
+                await article.insert()
+                logger.info(f"New article added: {entry.title}")
+            else:
+                logger.info(f"Article already exists: {entry.title}")
+    except Exception as e:
+        logger.error(f"Failed to process RSS feed {rss_feed.url}: {e}")
+        rss_feed.analysis_status = (
+            RSSFeedAnalysisStatus.failed
+        )  # TODO : add error message
+        await rss_feed.replace()
+        return
 
-    rss_url = rss_feed.url
-    parsed_feed = feedparser.parse(str(rss_url))
-    logger.info(f"Found {len(parsed_feed.entries)} entries in feed {rss_feed.url}")
-    for entry in parsed_feed.entries:
-        logger.info(f"Processing entry: {entry.title}")
-        if not await Article.find_one({"url": entry.link}):
-            logger.info(f"New article detected: {entry.title}")
-            summary = summarize(entry.link)
-            article = Article(title=entry.title, url=entry.link, summary=summary)
-            await article.insert()
-            logger.info(f"New article added: {entry.title}")
-        else:
-            logger.info(f"Article already exists: {entry.title}")
     logger.info(f"Finished processing RSS feed: {rss_feed.url}\n\n")
+    rss_feed.analysis_status = RSSFeedAnalysisStatus.done
+    await rss_feed.replace()
 
 
-@repeat_every(seconds=60 * 60)
+@repeat_every(seconds=60 * 60)  # 1 hour
 async def fetch_and_process_all_rss():
     logger.info("Fetching and processing all RSS feeds")
 
