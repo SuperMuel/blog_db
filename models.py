@@ -48,8 +48,25 @@ class Article(Document):
         examples=["https://supermuel.fr/why-use-git-when-you-can-email-zip-files"],
     )
 
+    summary: str | None = Field(
+        None,
+        examples=[
+            "This article is about why you should use Git instead of emailing zip files. The author explains the benefits of using Git and how it can improve your workflow."
+        ],
+    )
+
     class Settings:
         name = "articles"
+        indexes = [
+            IndexModel("url", unique=True),
+        ]
+
+
+class RSSFeed(Document):
+    url: HttpUrl = Field(..., examples=["https://tim-tek.com/feed"])
+
+    class Settings:
+        name = "rss_feeds"
         indexes = [
             IndexModel("url", unique=True),
         ]

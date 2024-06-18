@@ -1,13 +1,14 @@
 import os
 from contextlib import asynccontextmanager
 
+import feedparser
 from beanie import PydanticObjectId, init_beanie
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Security, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 from motor.motor_asyncio import AsyncIOMotorClient
 
-from models import Article, User
+from models import Article, RSSFeed, User
 
 api_key_header = APIKeyHeader(name="X-API-Key")
 
@@ -19,7 +20,11 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     client = AsyncIOMotorClient(os.environ["MONGODB_URI"])
 
-    await init_beanie(database=client["blogdb"], document_models=[Article, User])
+    # TODO : start background rss feed processing
+
+    await init_beanie(
+        database=client["blogdb"], document_models=[Article, User, RSSFeed]
+    )
 
     yield
 
@@ -29,7 +34,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="BlogDB",
     summary="This is a simple API that generates, stores and serves Blog articles summaries.",
-    version="0.0.1",
+    version="0.0.2",
     contact={
         "name": "SuperMuel",
         "url": "https://github.com/SuperMuel",
@@ -82,3 +87,46 @@ async def read_article(article_id: PydanticObjectId):
         return article
 
     raise HTTPException(status_code=404, detail=f"Article {article_id} not found")
+
+
+@app.post(
+    "/rss_feeds/",
+    response_model=RSSFeed,
+    tags=["rss_feeds"],
+    operation_id="add_rss_feed",
+)
+async def add_rss_feed(
+    rss_feed: RSSFeed,
+    background_tasks: BackgroundTasks,
+    user: User = Security(get_authenticated_user),
+):
+    existing_feed = await RSSFeed.find_one({"url": rss_feed.url})
+    if existing_feed:
+        return existing_feed
+
+    await rss_feed.insert()
+    # background_tasks.add_task(process_rss_feed, rss_feed)
+    return rss_feed
+
+
+def summarize(url: str) -> str:
+    # TODO
+    return "Résumé de l'article généré par IA"
+
+
+async def process_rss_feed(rss_feed: RSSFeed):
+    rss_url = rss_feed.url
+    parsed_feed = feedparser.parse(rss_url)
+    for entry in parsed_feed.entries:
+        if not await Article.find_one({"url": entry.link}):
+            # New article detected
+            summary = summarize(entry.url)
+            article = Article(title=entry.title, url=entry.link, summary=summary)
+            await article.insert()
+            print(f"Nouvel article ajouté: {entry.title}")
+
+
+async def fetch_and_process_all_rss():
+    rss_feeds = await RSSFeed.find_all().to_list()
+    for feed in rss_feeds:
+        await process_rss_feed(feed)
