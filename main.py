@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="BlogDB",
-    summary="This is a simple API that generates, stores and serves Blog articles summaries.",
+    summary="A microservice designed to monitor RSS feeds, generate concise summaries of new articles, store them in a database, and serve them via an API.",
     version="0.0.2",
     contact={
         "name": "SuperMuel",
