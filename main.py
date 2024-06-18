@@ -168,7 +168,7 @@ async def process_rss_feed(rss_feed: RSSFeed):
     await rss_feed.replace()
 
 
-@repeat_every(seconds=60 * 60)  # 1 hour
+@repeat_every(seconds=int(os.environ.get("RSS_FEED_PROCESS_INTERVAL_SECONDS", 3600)))
 async def fetch_and_process_all_rss():
     logger.info("Fetching and processing all RSS feeds")
 
