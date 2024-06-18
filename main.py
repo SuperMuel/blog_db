@@ -1,4 +1,7 @@
+import asyncio
+import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 
 import feedparser
@@ -6,11 +9,24 @@ from beanie import PydanticObjectId, init_beanie
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
+from fastapi_utilities import repeat_every
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from models import Article, RSSFeed, User
 
 api_key_header = APIKeyHeader(name="X-API-Key")
+
+
+logger = logging.getLogger(__name__)
+
+# https://stackoverflow.com/a/77007723
+logger.setLevel(logging.DEBUG)
+stream_handler = logging.StreamHandler(sys.stdout)
+log_formatter = logging.Formatter(
+    "%(asctime)s [%(processName)s: %(process)d] [%(threadName)s: %(thread)d] [%(levelname)s] %(name)s: %(message)s"
+)
+stream_handler.setFormatter(log_formatter)
+logger.addHandler(stream_handler)
 
 
 load_dotenv()
@@ -20,11 +36,13 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     client = AsyncIOMotorClient(os.environ["MONGODB_URI"])
 
-    # TODO : start background rss feed processing
-
     await init_beanie(
         database=client["blogdb"], document_models=[Article, User, RSSFeed]
     )
+    logger.info("Connected to MongoDB")
+
+    # Start the fetch_and_process_all_rss task in the background
+    asyncio.create_task(fetch_and_process_all_rss())
 
     yield
 
@@ -48,7 +66,6 @@ async def root():
     return {"message": "Welcome to BlogDB"}
 
 
-# TODO : TLS
 async def get_authenticated_user(api_key: str = Security(api_key_header)) -> User:
     user = await User.find_one({"api_key": api_key})
 
@@ -105,7 +122,8 @@ async def add_rss_feed(
         return existing_feed
 
     await rss_feed.insert()
-    # background_tasks.add_task(process_rss_feed, rss_feed)
+    background_tasks.add_task(process_rss_feed, rss_feed)
+    logger.info(f"RSS feed added: {rss_feed.url}, starting processing in background")
     return rss_feed
 
 
@@ -115,18 +133,35 @@ def summarize(url: str) -> str:
 
 
 async def process_rss_feed(rss_feed: RSSFeed):
+    logger.info(f"Processing RSS feed: {rss_feed.url}")
+
+    # TODO : set rss_feed analysis status to "processing"
+
     rss_url = rss_feed.url
-    parsed_feed = feedparser.parse(rss_url)
+    parsed_feed = feedparser.parse(str(rss_url))
+    logger.info(f"Found {len(parsed_feed.entries)} entries in feed {rss_feed.url}")
     for entry in parsed_feed.entries:
+        logger.info(f"Processing entry: {entry.title}")
         if not await Article.find_one({"url": entry.link}):
-            # New article detected
-            summary = summarize(entry.url)
+            logger.info(f"New article detected: {entry.title}")
+            summary = summarize(entry.link)
             article = Article(title=entry.title, url=entry.link, summary=summary)
             await article.insert()
-            print(f"Nouvel article ajouté: {entry.title}")
+            logger.info(f"New article added: {entry.title}")
+        else:
+            logger.info(f"Article already exists: {entry.title}")
+    logger.info(f"Finished processing RSS feed: {rss_feed.url}\n\n")
 
 
+@repeat_every(seconds=60 * 60)
 async def fetch_and_process_all_rss():
+    logger.info("Fetching and processing all RSS feeds")
+
     rss_feeds = await RSSFeed.find_all().to_list()
+
+    if not rss_feeds:
+        logger.info("No RSS feeds found")
+        return
+
     for feed in rss_feeds:
         await process_rss_feed(feed)

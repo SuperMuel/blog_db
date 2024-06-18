@@ -55,6 +55,9 @@ class Article(Document):
         ],
     )
 
+    # TODO : publish date
+    # TODO : language
+
     class Settings:
         name = "articles"
         indexes = [
