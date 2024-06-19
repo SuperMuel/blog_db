@@ -4,15 +4,16 @@ import os
 import sys
 from contextlib import asynccontextmanager
 
-import feedparser
 from beanie import PydanticObjectId, init_beanie
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 from fastapi_utilities import repeat_every
 from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic_core import Url
 
 from models import Article, RSSFeed, RSSFeedAnalysisStatus, User
+from rss_feed_parser import RSSFeedParser
 
 api_key_header = APIKeyHeader(name="X-API-Key")
 
@@ -131,6 +132,7 @@ async def summarize(url: str) -> str:
     return ""
 
 
+# TODO : test with https://lorem-rss.herokuapp.com/
 async def process_rss_feed(rss_feed: RSSFeed):
     if rss_feed.analysis_status == RSSFeedAnalysisStatus.in_progress:
         logger.info(f"RSS feed {rss_feed.url} is already being processed")
@@ -142,16 +144,26 @@ async def process_rss_feed(rss_feed: RSSFeed):
     logger.info(f"Processing RSS feed: {rss_feed.url}")
 
     try:
-        rss_url = rss_feed.url
-        parsed_feed = feedparser.parse(str(rss_url))
-        logger.info(f"Found {len(parsed_feed.entries)} entries in feed {rss_feed.url}")
-        for entry in parsed_feed.entries:
+        parsed_feed = RSSFeedParser(rss_feed.url)
+
+        logger.info(
+            f"Found {parsed_feed.get_number_of_entries()} entries in feed {rss_feed.url}"
+        )
+
+        for entry in parsed_feed.get_entries():
             logger.info(f"Processing entry: {entry.title}")
-            if not await Article.find_one({"url": entry.link}):
+            if not await Article.find_one({"url": entry.url}):
                 logger.info(f"New article detected: {entry.title}")
-                summary = await summarize(entry.link)
-                article = Article(title=entry.title, url=entry.link, summary=summary)
-                await article.insert()
+
+                try:
+                    summary = await summarize(entry.markdown_content)
+                    article = Article(
+                        title=entry.title, url=Url(entry.url), summary=summary
+                    )
+                    await article.insert()
+                except Exception as e:  # TODO : better error handling
+                    logger.error(f"Failed to summarize article: {entry.title}, {e}")
+                    continue
                 logger.info(f"New article added: {entry.title}")
             else:
                 logger.info(f"Article already exists: {entry.title}")
