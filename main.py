@@ -3,17 +3,20 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from textwrap import indent
 
 from beanie import PydanticObjectId, init_beanie
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Security, status
 from fastapi.security import APIKeyHeader
 from fastapi_utilities import repeat_every
+from langchain_openai import ChatOpenAI
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic_core import Url
 
 from models import Article, RSSFeed, RSSFeedAnalysisStatus, User
 from rss_feed_parser import RSSFeedParser
+from summarizer import ChainOfDensity
 
 api_key_header = APIKeyHeader(name="X-API-Key")
 
@@ -128,8 +131,20 @@ async def add_rss_feed(
     return rss_feed
 
 
-async def summarize(url: str) -> str:
-    return ""
+async def summarize(content: str) -> str:
+    if not content:
+        logger.warning("Empty content provided for summarization")
+        raise ValueError("Empty content provided for summarization")
+
+    model = ChatOpenAI(model="gpt-4o")
+    cod = ChainOfDensity(model=model)
+
+    try:
+        summary = cod.generate_summary(content)
+        return summary
+    except Exception as e:
+        logger.error(f"Failed to summarize content: {e}")
+        raise e
 
 
 # TODO : test with https://lorem-rss.herokuapp.com/
@@ -138,7 +153,9 @@ async def process_rss_feed(rss_feed: RSSFeed):
         logger.info(f"RSS feed {rss_feed.url} is already being processed")
         return
 
-    rss_feed.analysis_status = RSSFeedAnalysisStatus.in_progress
+    rss_feed.analysis_status = (
+        RSSFeedAnalysisStatus.in_progress
+    )  # Use an async context manager to ensure that the state is updated at the end
     await rss_feed.replace()
 
     logger.info(f"Processing RSS feed: {rss_feed.url}")
@@ -156,7 +173,11 @@ async def process_rss_feed(rss_feed: RSSFeed):
                 logger.info(f"New article detected: {entry.title}")
 
                 try:
+                    logger.info(f"Summarizing article: {entry.title}")
                     summary = await summarize(entry.markdown_content)
+                    logger.info(
+                        f"Summary generated for article: {entry.title} \n{indent(summary, '    ')}"
+                    )
                     article = Article(
                         title=entry.title, url=Url(entry.url), summary=summary
                     )

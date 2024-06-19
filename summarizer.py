@@ -1,7 +1,9 @@
-from langchain_core.language_models import BaseChatModel
 from langchain import hub
 from langchain.output_parsers.json import SimpleJsonOutputParser
+from langchain_core.language_models import BaseChatModel
 from langsmith import traceable
+
+from rss_feed_parser import RSSFeedParser
 
 
 class ChainOfDensity:
@@ -62,19 +64,22 @@ class ChainOfDensity:
 
 # example
 if __name__ == "__main__":
-    import requests
     from dotenv import load_dotenv
     from langchain_openai import ChatOpenAI
 
     load_dotenv()
 
-    url = "https://raw.githubusercontent.com/SuperMuel/Syncademic/main/README.md"
-    content = requests.get(url).text
-
     model = ChatOpenAI(model="gpt-4o")
-
     cod = ChainOfDensity(model=model)
 
-    summary = cod.generate_summary(content)
+    parser = RSSFeedParser("https://sociaty.io/feed")
+    parser.parse()
 
-    print(summary)
+    for entry in parser.get_entries():
+        print(f"\033[92m{entry.title}\033[0m")
+
+        summary = cod.generate_summary(entry.markdown_content)
+
+        print(f"\033[93m{summary}\033[0m")
+
+        print("\n\n")
