@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "blog-db"
-version = "0.1.0"
+version = "0.0.2"
 description = "This is a simple API that generates, stores and serves Blog articles summaries."
 authors = ["SuperMuel <69467005+SuperMuel@users.noreply.github.com>"]
 readme = "README.md"
@@ -19,6 +19,20 @@ gunicorn = "^22.0.0"
 beanie = "^1.26.0"
 
 
+feedparser = "^6.0.11"
+fastapi-utilities = "^0.2.0"
+
+langchain = "^0.2.5"
+langchain-anthropic = "^0.1.15"
+langsmith = "^0.1.79"
+langchain-community = "^0.2.5"
+langchain-core = "^0.2.8"
+langchainhub = "^0.1.20"
+
+newspaper3k = "^0.2.8"
+lxml-html-clean = "^0.1.1"
+
+markdownify = "^0.12.1"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
