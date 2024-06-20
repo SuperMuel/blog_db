@@ -15,9 +15,9 @@ class ChainOfDensity:
         self,
         model: BaseChatModel,
         content_category: str = "Article",
-        entity_range: str = "1-3",
-        max_words: int = 80,
-        iterations: int = 3,
+        entity_range: str = "2-3",
+        max_words: int = 100,
+        iterations: int = 6,
     ):
         self.model = model
         self.content_category = content_category
