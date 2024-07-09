@@ -1,15 +1,24 @@
 import streamlit as st
+from datetime import datetime
+from langchain_core.runnables.history import RunnableWithMessageHistory
+
+from langchain.chains import create_history_aware_retriever
+
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.prompts import format_document
 from langchain_pinecone import PineconeVectorStore
 from langchain_voyageai import VoyageAIEmbeddings
 from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnableLambda, RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
 from langchain_anthropic import ChatAnthropic
-from operator import itemgetter
 from datetime import date
 from dotenv import load_dotenv
+from langchain_community.chat_message_histories import (
+    StreamlitChatMessageHistory,
+)
+
 
 # Load environment variables
 load_dotenv()
@@ -42,8 +51,12 @@ prompt = PromptTemplate.from_template(
     "Format your answer in markdown and add inline hyperlinks."
     "Do not start your answer with 'Based on the provided context', or similar phrases. "
     f"Today is {date.today()} and below are the latest news on AI. \n"
-    "Question : {question}\n"
-    "Context : \n{context}\n\n"
+    "<question>\n"
+    "{input}\n"
+    "</question>\n\n"
+    "<context>\n"
+    "{context}\n"
+    "</context>\n\n"
     "Answer:"
 )
 
@@ -56,6 +69,17 @@ def format_docs(docs: list[Document], separator: str = "\n\n") -> str:
     return separator.join(format_document(doc, doc_prompt) for doc in docs)
 
 
+def convert_docs_dates(docs: list[Document]) -> list[Document]:
+    """Convert Unix timestamps to human-readable dates in document metadata."""
+    for doc in docs:
+        for key in ["date", "found_at"]:
+            if key in doc.metadata:
+                doc.metadata[key] = datetime.fromtimestamp(doc.metadata[key]).strftime(
+                    "%Y-%m-%d"
+                )
+    return docs
+
+
 def deduplicate_docs(docs: list[Document]) -> list[Document]:
     unique_docs = {}
     for doc in docs:
@@ -64,51 +88,77 @@ def deduplicate_docs(docs: list[Document]) -> list[Document]:
     return list(unique_docs.values())
 
 
+history = StreamlitChatMessageHistory(key="history")
+
 # Set up retriever and RAG chain
 retriever = docsearch.as_retriever(search_kwargs={"k": 30})
 
+contextualize_q_system_prompt = """Given a chat history and the latest user question \
+which might reference context in the chat history, formulate a standalone question \
+which can be understood without the chat history. Do NOT answer the question, \
+just reformulate it if needed and otherwise return it as is."""
+contextualize_q_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", contextualize_q_system_prompt),
+        MessagesPlaceholder("history"),
+        ("human", "{input}"),
+    ]
+)
+history_aware_retriever = create_history_aware_retriever(
+    llm, retriever, contextualize_q_prompt
+)
+
+
 rag_chain = (
     {
-        "question": RunnablePassthrough(),
-        "context": itemgetter("question")
-        | retriever
-        | RunnableLambda(deduplicate_docs)
-        | RunnableLambda(format_docs),
+        "input": RunnablePassthrough(),
+        "context": history_aware_retriever
+        | convert_docs_dates
+        | deduplicate_docs
+        | format_docs,
     }
     | prompt
     | llm
     | StrOutputParser()
 )
 
+chain_with_history = RunnableWithMessageHistory(
+    rag_chain,
+    lambda session_id: history,
+    input_messages_key="input",
+    history_messages_key="history",
+)
+
+
 # Streamlit UI
 st.write("Ask me anything about the latest AI news!")
 
-# Initialize chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
 
 # Display chat messages from history on app rerun
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+for msg in history.messages:
+    with st.chat_message(msg.type):
+        st.markdown(msg.content)
 
 # React to user input
 if prompt := st.chat_input("What would you like to know about AI?"):
     # Display user message in chat message container
     st.chat_message("user").markdown(prompt)
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
         # Simulate stream of response with milliseconds delay
-        for chunk in rag_chain.stream({"question": prompt}):
+        for chunk in chain_with_history.stream(
+            {"input": prompt},
+            config={"configurable": {"session_id": "any"}},
+        ):
             full_response += chunk
             message_placeholder.markdown(full_response + "▌")
         message_placeholder.markdown(full_response)
-    # Add assistant response to chat history
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+    print(
+        f"At the end of the assistant answer, last message from history is : {history.messages[-1]}"
+    )
 
 # Add a sidebar with information about the app
 st.sidebar.title("About")
