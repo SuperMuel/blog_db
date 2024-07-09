@@ -1,0 +1,7 @@
+streamlit
+langchain
+langchain-pinecone
+langchain-voyageai
+langchain-anthropic
+pinecone-client[grpc]
+python-dotenv
