@@ -12,10 +12,10 @@ from langchain.prompts import PromptTemplate
 from langchain.schema import StrOutputParser
 from textwrap import dedent
 import os
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import pymongo
 from pinecone.grpc import PineconeGRPC as Pinecone
-from datetime import datetime
 from tqdm import tqdm
 
 # Load environment variables
@@ -47,6 +47,7 @@ def get_closest_points(points, center, n=5):
     return closest_indices
 
 
+@st.cache_data(show_spinner=False)
 def generate_cluster_title(article_titles: list[str]) -> str:
     llm = ChatAnthropic(model_name="claude-3-haiku-20240307")  # type: ignore
     prompt = dedent("""Given the following news article titles, generate a single 3-4 words title that summarizes what the cluster of articles is about:
@@ -69,18 +70,41 @@ st.set_page_config(
 st.title("AI News Cluster Visualization")
 
 
-@st.cache_data
-def load_data():
-    print("Begin loading data...")
+# Sidebar controls
+st.sidebar.header("Filters")
+today = datetime.now().date()
+default_start_date = today - timedelta(days=2)
 
-    # Fetch IDs from MongoDB
-    all_ids = [str(x["_id"]) for x in collection.find({}, {"_id": 1}).limit(1000)]
+dates = st.sidebar.date_input(
+    "Date Range", [default_start_date, today], key="date_range"
+)
+assert isinstance(dates, tuple) and len(dates) == 2, "Invalid date range selected."
 
-    # Fetch data from Pinecone
+start_date, end_date = dates
+
+
+st.sidebar.header("Clustering Parameters")
+min_cluster_size = st.sidebar.slider("Min Cluster Size", 2, 20, 6)
+min_samples = st.sidebar.slider("Min Samples", 2, 20, 3)
+
+
+@st.cache_data(show_spinner="Loading data...")
+def load_data(start_date, end_date):
+    # Convert dates to datetime objects for MongoDB query
+    start_datetime = datetime.combine(start_date, datetime.min.time())
+    end_datetime = datetime.combine(end_date, datetime.max.time())
+
+    # Fetch IDs from MongoDB with date filter
+    all_ids = [
+        str(x["_id"])
+        for x in collection.find(
+            {"date": {"$gte": start_datetime, "$lte": end_datetime}}, {"_id": 1}
+        )
+    ]
+
     def fetch_all_vectors(index, all_ids: list[str], batch_size: int = 1000):
         all_data = []
         total_batches = (len(all_ids) + batch_size - 1) // batch_size
-
         for i in tqdm(
             range(0, len(all_ids), batch_size),
             total=total_batches,
@@ -89,39 +113,24 @@ def load_data():
             batch_ids = all_ids[i : i + batch_size]
             batch_data = index.fetch(ids=batch_ids)
             all_data.extend(batch_data["vectors"].values())
-
         return all_data
 
     all_vectors = fetch_all_vectors(index, all_ids)
-
-    # Convert to DataFrame
     data_dict = [
-        {
-            "id": x["id"],
-            **x["metadata"],
-            "embedding": x["values"],
-        }
-        for x in all_vectors
+        {"id": x["id"], **x["metadata"], "embedding": x["values"]} for x in all_vectors
     ]
 
-    # Convert timestamps to datetime
     for x in data_dict:
         x["found_at"] = datetime.fromtimestamp(x["found_at"])
         x["date"] = datetime.fromtimestamp(x["date"])
 
     df = pd.DataFrame(data_dict)
-
-    print("Data loaded successfully!")
-
     return df
 
 
-df = load_data()
-
-
-# Perform clustering
-@st.cache_data
-def perform_clustering(df, min_cluster_size=5, min_samples=5):
+@st.cache_data(show_spinner="Clustering data...")
+def perform_clustering(df, min_cluster_size, min_samples):
+    print("Performing clustering...")
     matrix = np.array(df.embedding.tolist())
 
     clusterer = hdbscan.HDBSCAN(
@@ -157,13 +166,14 @@ def perform_clustering(df, min_cluster_size=5, min_samples=5):
     tsne_df["cluster"] = tsne_df["cluster_name"]
     tsne_df = tsne_df.drop("cluster_name", axis=1)
 
+    print("Clustering completed!")
     return tsne_df, cluster_names
 
 
-# Sidebar controls
-st.sidebar.header("Clustering Parameters")
-min_cluster_size = st.sidebar.slider("Min Cluster Size", 2, 20, 5)
-min_samples = st.sidebar.slider("Min Samples", 2, 20, 5)
+# Load data
+df = load_data(start_date, end_date)
+
+st.sidebar.write(f"Number of articles: {len(df)}")
 
 # Perform clustering
 tsne_df, cluster_names = perform_clustering(df, min_cluster_size, min_samples)
@@ -178,6 +188,7 @@ fig = px.scatter(
     title="2D t-SNE projection of news articles with HDBSCAN clustering",
     labels={"tsne_1": "t-SNE feature 1", "tsne_2": "t-SNE feature 2"},
     color_discrete_sequence=px.colors.qualitative.Plotly,
+    height=1000,
 )
 
 fig.update_traces(
