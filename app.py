@@ -72,7 +72,7 @@ class AINewsPrompts:
         )
 
     @staticmethod
-    def get_contextualize_prompt():
+    def get_contextualize_prompt():  # TODO : on long conversations, it fails to rewrite the question, and answers it instead.
         contextualize_q_system_prompt = (
             "Given a chat history and the latest user question "
             "which might reference context in the chat history, formulate a standalone question "
