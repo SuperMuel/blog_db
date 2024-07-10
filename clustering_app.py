@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 import hdbscan
 from collections import defaultdict
 from sklearn.metrics.pairwise import euclidean_distances
@@ -87,6 +88,9 @@ st.sidebar.header("Clustering Parameters")
 min_cluster_size = st.sidebar.slider("Min Cluster Size", 2, 20, 6)
 min_samples = st.sidebar.slider("Min Samples", 2, 20, 3)
 
+ORIGINAL_DIM = 1024
+n_components = st.sidebar.slider("Number of dimensions", 2, ORIGINAL_DIM, ORIGINAL_DIM)
+
 
 @st.cache_data(show_spinner="Loading data...")
 def load_data(start_date, end_date):
@@ -129,19 +133,28 @@ def load_data(start_date, end_date):
 
 
 @st.cache_data(show_spinner="Clustering data...")
-def perform_clustering(df, min_cluster_size, min_samples):
+def perform_clustering(df, min_cluster_size, min_samples, n_components):
     print("Performing clustering...")
     matrix = np.array(df.embedding.tolist())
 
+    # Perform dimensionality reduction
+    if n_components < matrix.shape[1]:
+        pca = PCA(n_components=n_components)
+        reduced_matrix = pca.fit_transform(matrix)
+    else:
+        reduced_matrix = matrix
+
+    # Perform clustering on reduced matrix
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size, min_samples=min_samples
     )
-    cluster_labels = clusterer.fit_predict(matrix)
+    cluster_labels = clusterer.fit_predict(reduced_matrix)
 
+    # Perform t-SNE on the reduced matrix for visualization
     tsne = TSNE(
         n_components=2, perplexity=15, random_state=42, init="random", learning_rate=150
     )
-    vis_dims = tsne.fit_transform(matrix)
+    vis_dims = tsne.fit_transform(reduced_matrix)
 
     tsne_df = pd.DataFrame(vis_dims, columns=["tsne_1", "tsne_2"])
     tsne_df["title"] = df["title"]
@@ -150,7 +163,9 @@ def perform_clustering(df, min_cluster_size, min_samples):
 
     cluster_points = defaultdict(list)
     cluster_titles = defaultdict(list)
-    for cluster, point, title in zip(tsne_df["cluster"], matrix, tsne_df["title"]):
+    for cluster, point, title in zip(
+        tsne_df["cluster"], reduced_matrix, tsne_df["title"]
+    ):
         cluster_points[cluster].append(point)
         cluster_titles[cluster].append(title)
 
@@ -176,16 +191,17 @@ df = load_data(start_date, end_date)
 st.sidebar.write(f"Number of articles: {len(df)}")
 
 # Perform clustering
-tsne_df, cluster_names = perform_clustering(df, min_cluster_size, min_samples)
+tsne_df, cluster_names = perform_clustering(
+    df, min_cluster_size, min_samples, n_components=n_components
+)
 
-# Create and display the plot
 fig = px.scatter(
     tsne_df,
     x="tsne_1",
     y="tsne_2",
     color="cluster",
     hover_data=["title", "wrapped_body", "cluster"],
-    title="2D t-SNE projection of news articles with HDBSCAN clustering",
+    title=f"2D t-SNE projection of news articles with HDBSCAN clustering (Reduced to {n_components} dimensions)",
     labels={"tsne_1": "t-SNE feature 1", "tsne_2": "t-SNE feature 2"},
     color_discrete_sequence=px.colors.qualitative.Plotly,
     height=1000,
@@ -206,27 +222,11 @@ st.header("Cluster Information")
 n_clusters = len(set(tsne_df["cluster"])) - 1  # Exclude 'Noise' cluster
 st.write(f"Number of clusters: {n_clusters}")
 
-st.subheader("Cluster Names")
-for cluster, name in cluster_names.items():
-    if cluster != -1:
-        st.write(f"Cluster {cluster}: {name}")
-
 # Display articles in the 'Noise' cluster
 st.subheader("Articles in 'Noise' Cluster")
 noise_articles = tsne_df[tsne_df["cluster"] == "Noise"]
-st.write(f"Number of articles in 'Noise' cluster: {len(noise_articles)}")
+st.write(
+    f"Number of articles in 'Noise' cluster: {len(noise_articles)} ({(len(noise_articles) / len(tsne_df)) * 100:.2f}% of total)"
+)
 st.write("Sample of articles in 'Noise' cluster:")
 st.write(noise_articles["title"].head(10).tolist())
-
-# Add a section for cluster exploration
-st.header("Explore Clusters")
-selected_cluster = st.selectbox(
-    "Select a cluster to explore", sorted(set(tsne_df["cluster"]))
-)
-cluster_articles = tsne_df[tsne_df["cluster"] == selected_cluster]
-st.write(f"Number of articles in cluster '{selected_cluster}': {len(cluster_articles)}")
-st.write("Sample articles in this cluster:")
-for _, article in cluster_articles.head(5).iterrows():
-    st.write(f"- {article['title']}")
-    with st.expander("Show article body"):
-        st.write(article["wrapped_body"].replace("<br>", "\n"))
