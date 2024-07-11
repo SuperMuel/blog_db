@@ -1,0 +1,9 @@
+pymongo
+python-dotenv
+pytz
+tqdm
+duckduckgo-search==5.3.1b1
+tenacity
+requests
+voyageai
+pinecone-client[grpc]
