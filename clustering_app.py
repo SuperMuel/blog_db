@@ -34,6 +34,10 @@ class DataLoader:
 
     @st.cache_data(show_spinner="Loading data...")
     def load_data(_self, start_date: date, end_date: date) -> pd.DataFrame:
+        assert (
+            0 <= (end_date - start_date).days <= 365
+        ), "Date range must be between 0 and 365 days."
+
         start_datetime = datetime.combine(start_date, datetime.min.time())
         end_datetime = datetime.combine(end_date, datetime.max.time())
 
@@ -73,10 +77,6 @@ class DataLoader:
 
 
 class ClusteringEngine:
-    @staticmethod
-    def wrap_text(text: str, width: int = 50) -> str:
-        return "<br>".join(textwrap.wrap(text, width=width))
-
     @staticmethod
     def get_cluster_center(points: np.ndarray) -> np.ndarray:
         return np.mean(points, axis=0)
@@ -140,7 +140,11 @@ class ClusteringEngine:
 
         tsne_df = pd.DataFrame(vis_dims, columns=["tsne_1", "tsne_2"])
         tsne_df["title"] = df["title"]
-        tsne_df["wrapped_body"] = df["body"].apply(_self.wrap_text)
+        tsne_df["body"] = df["body"]
+        tsne_df["url"] = df["url"]
+        tsne_df["found_at"] = df["found_at"]
+        tsne_df["date"] = df["date"]
+
         tsne_df["cluster"] = cluster_labels
 
         cluster_points = defaultdict(list)
@@ -169,7 +173,13 @@ class ClusteringEngine:
 
 class Visualizer:
     @staticmethod
+    def wrap_text(text: str, width: int = 50) -> str:
+        return "<br>".join(textwrap.wrap(text, width=width))
+
+    @staticmethod
     def create_scatter_plot(tsne_df: pd.DataFrame, n_components: int):
+        tsne_df["wrapped_body"] = tsne_df["body"].apply(Visualizer.wrap_text)
+
         fig = px.scatter(
             tsne_df,
             x="tsne_1",
