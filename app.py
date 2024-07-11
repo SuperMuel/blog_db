@@ -1,5 +1,6 @@
-import streamlit as st
 from datetime import date, datetime
+
+import streamlit as st
 from dotenv import load_dotenv
 from langchain.chains import create_history_aware_retriever
 from langchain_anthropic import ChatAnthropic
@@ -12,7 +13,7 @@ from langchain_core.prompts import (
     PromptTemplate,
     format_document,
 )
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_pinecone import PineconeVectorStore
 from langchain_voyageai import VoyageAIEmbeddings
@@ -73,19 +74,16 @@ class AINewsPrompts:
 
     @staticmethod
     def get_contextualize_prompt():  # TODO : on long conversations, it fails to rewrite the question, and answers it instead.
-        contextualize_q_system_prompt = (
+        template = (
             "Given a chat history and the latest user question "
             "which might reference context in the chat history, formulate a standalone question "
             "which can be understood without the chat history. Do NOT answer the question, "
-            "just reformulate it if needed and otherwise return it as is."
+            "just reformulate it if needed and otherwise return it as is.\n"
+            "<chat_history>\n{chat_history}\n</chat_history>\n\n"
+            "<user_question>\n{input}\n</user_question>\n\n"
+            "Standalone question:"
         )
-        return ChatPromptTemplate.from_messages(
-            [
-                ("system", contextualize_q_system_prompt),
-                MessagesPlaceholder("chat_history"),
-                ("human", "{input}"),
-            ]
-        )
+        return ChatPromptTemplate.from_template(template)
 
 
 class AINewsChatbot:
